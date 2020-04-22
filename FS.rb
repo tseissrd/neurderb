@@ -1,4 +1,5 @@
 class FS
+  
   def self.KiB(qnt)
     return 1024*qnt
   end
