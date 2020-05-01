@@ -4,12 +4,16 @@ class Task
   @@queued = 0
   @@queueMtx = Mutex.new()
   @@taskLock = ConditionVariable.new()
+  @@userResources = {}
+  
   def self.currentCount()
     @@current
   end
+  
   def self.max=(newMax)
     @@max = newMax
   end
+  
   def self.queue(&prc)
     waitPrc = Proc.new {
       @@queueMtx.synchronize {
@@ -28,14 +32,38 @@ class Task
     }
     Thread.new(&scheduled)
   end
-  def self.wait()
-    @@queueMtx.synchronize {
-      while @@queued > 0
-        @@taskLock.wait(@@queueMtx)
+  
+  def self.wait(threads = [])
+    if !(threads.class == Thread) && threads.length === 0
+      @@queueMtx.synchronize {
+        while @@queued > 0
+          @@taskLock.wait(@@queueMtx)
+        end
+      }
+    else
+      waitFor = threads
+      if !(threads.class == Array)
+        waitFor = [threads]
       end
-    }
+      waitFor.each {|thr|
+        thr.join
+      }
+    end
   end
-  def self.sync(&prc)
-    @@queueMtx.synchronize(&prc)
+  
+  def self.sync(resource = @@queueMtx, &prc)
+    if resource.class != Mutex
+      if !@@userResources.key?(resource)
+        @@userResources[resource] = Mutex.new
+      end
+      @@userResources[resource].synchronize(&prc)
+    else
+      resource.synchronize(&prc)
+    end
   end
+  
+  def self.done
+    Thread.current.exit
+  end
+  
 end
