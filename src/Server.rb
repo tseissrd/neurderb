@@ -15,7 +15,7 @@ class Server
     @keys = {}
     @pendingZip = []
     @zipping = []
-    @readbuf = FS.parse( '4MiB' )
+    @buffer_length = FS.parse( '4MiB' )
   end
   
   def read_keys(path = (@confFolder + 'keys.txt'))
@@ -49,6 +49,24 @@ class Server
       Dir.mkdir(cfpath)
     end
     @confFolder = cfpath
+  end
+  
+  def read_conf
+    path = @confFolder + 'config.ini'
+    if File.exist?(path)
+      File.open(path, 'r') {|conf|
+        conf.each_line {|ln|
+          case ln.split('=')[0]
+            when 'server_ip'
+              @server_ip = ln.split('=')[1].chomp('')
+            when 'server_port'
+              @server_port = ln.split('=')[1].chomp('')
+            when 'read_buffer'
+              @buffer_length = FS.parse(ln.split('=')[1].chomp(''))
+          end
+        }
+      }
+    end
   end
   
   def authorize(shkey)
@@ -269,7 +287,7 @@ class Server
                           #Task.queue {
                             Archive.unzip(@dataFolder + clientPath + filename + '/' + sha1 + '/' + filename + '.gz')
                             File.open(@dataFolder + clientPath + filename + '/' + sha1 + '/' + filename, 'rb') {|rf|
-                              while input = rf.read(@readbuf)
+                              while input = rf.read(@buffer_length)
                                 #File.binwrite('test.txt', input)
                                 writeit += sock.write(Bstring.f(input))
                                 if sock.read(1) != TAB
