@@ -15,17 +15,21 @@ Name "nn driven file hosting 0.0.1"
 OutFile "neurderb.exe"
 
 ; Request application privileges for Windows Vista
-RequestExecutionLevel admin
+RequestExecutionLevel user
 
 ; Build Unicode installer
 Unicode True
 
 ; The default installation directory
-InstallDir $PROGRAMFILES\Neurderb
+InstallDir $APPDATA\Neurderb
 
 ; Registry key to check for directory (so if you install again, it will 
 ; overwrite the old one automatically)
-InstallDirRegKey HKLM "Software\Neurderb" "Install_Dir"
+;InstallDirRegKey HKLM "Software\Neurderb" "Install_Dir"
+;Function .onInit
+;  SetRegView 64
+;  ReadRegStr $INSTDIR HKLM Software\Neurderb "Install_Dir"
+;FunctionEnd
 
 ;--------------------------------
 
@@ -63,13 +67,16 @@ Section "Neurderb Client"
   File "src\ssh\DataTypes.rb"
   File "src\ssh\MessageCodes.rb"
   File "src\ssh\Algorithms.rb"
-  File "shkey.txt"
+  File "key.txt"
   File "config.ini"
   File "redist\rubyinstaller-2.7.1-1-x64.exe"
   File "redist\rubyinstaller-2.7.1-1-x86.exe"
   File "configure.bat"
   File "CMSend.bat"
   File "start_client.bat"
+  File "writeregistry.bat"
+  File "clearregistry.bat"
+  File "cli.bat"
   CreateDirectory $INSTDIR\src
   CreateDirectory $INSTDIR\src\ssh
   CreateDirectory $INSTDIR\redist
@@ -91,6 +98,7 @@ Section "Neurderb Client"
   Rename "rubyinstaller-2.7.1-1-x64.exe" "redist\rubyinstaller-2.7.1-1-x64.exe"
   
   ; Write the installation path into the registry
+  SetRegView 32
   WriteRegStr HKLM "SOFTWARE\Neurderb" "Install_Dir" "$INSTDIR"
   
   ; Write the uninstall keys for Windows
@@ -127,6 +135,7 @@ SectionEnd
 Section "Uninstall"
   
   ; Remove registry keys
+  SetRegView 64
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Neurderb"
   DeleteRegKey HKLM SOFTWARE\Neurderb
   DeleteRegKey HKLM "SOFTWARE\Classes\*\shell\Neurderb"
@@ -137,6 +146,7 @@ Section "Uninstall"
 ;  Delete "$INSTDIR\ssh\*.*"
 ;  RMDir /r "$INSTDIR\redist"
 ;  RMDir /r "$INSTDIR\ssh"
+;  ExecWait "$INSTDIR\clearregistry.bat"
   RMDir /r "$INSTDIR"
 ;  Delete $INSTDIR\example2.nsi
 ;  Delete $INSTDIR\uninstall.exe
@@ -146,6 +156,5 @@ Section "Uninstall"
 
   ; Remove directories used
   RMDir "$SMPROGRAMS\Neurderb"
-  RMDir "$INSTDIR"
 
 SectionEnd

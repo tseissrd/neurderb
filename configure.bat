@@ -8,4 +8,6 @@ IF "where ruby"==0 (
 	)
 )
 ECHO ruby installed
+ECHO writing registry entries
+writeregistry.bat
 config.ini

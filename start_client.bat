@@ -1,4 +1,4 @@
 @set pwd=%cd%
 @cd src
-@ruby nrbClient.rb
+@ruby -W0 nrbClient.rb
 @cd %pwd%
