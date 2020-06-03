@@ -65,15 +65,9 @@ end
 
 class Bstring
   def self.f(str)
-#    body = (str.bytes.map {|b|
-#      [b].pack('U')
-#    }).join
     return Uint32.f(str.bytes.length) + str
   end
   def self.to_s(bstring)
-#    return bstring[4..(-1)].unpack('U*').map{|b|
-#      puts b
-#    }
     return bstring[4..(-1)]
   end
 end

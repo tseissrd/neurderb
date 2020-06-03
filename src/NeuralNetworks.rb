@@ -1,4 +1,4 @@
-require "Task.rb"
+require "./Task.rb"
 
 class Connection
   def initialize(neu1,neu2,wgt = 0)
@@ -51,6 +51,26 @@ class Neuron
     activation
   end
 end
+
+class SOM_neuron < Neuron
+  
+    def initialize(cnts = [], center = [])
+      @activation = 0
+      @connections = []
+      cnts.each {|cn|
+        connectionAdd(cn)
+      }
+      @center = center
+    end
+    
+    def center
+      @center
+    end
+    def center=(coords)
+      @center = coords
+    end
+  
+end
   
 class NeuralNetwork
   
@@ -101,6 +121,7 @@ class NeuralNetwork
   def neuronAdd(neu)
     @neurons.push(neu)
     @neuronsCount = @neuronsCount + 1
+    neu
   end
   
   def neurons
@@ -251,13 +272,15 @@ class NeuralNetwork
   
   def evaluate()
     out = []
+    Task.groupMax('activations eval',100)
+    tasks = []
     outNeurons.each do |n|
-      Task.queue {
+      tasks.push Task.queue('activations eval') {
         activate(n)
         out.push([n,n.activation()])
       }
     end
-    Task.wait
+    Task.wait(tasks)
     out
   end
   
@@ -290,10 +313,183 @@ class NeuralNetwork
   
 end
 
+class SelfOrganizing < NeuralNetwork
+  
+   def initialize(inputdim, somdim)
+     @inputdim = inputdim
+     @somdim = somdim
+     @neuronsCount = 0
+     @neurons = []
+   end
+   
+   def self.newSOM(neuronscount, bounds) # neuronscount: [ nested layers neuron count ], [level3-2 layer2]] ] // bounds: [ [coord1 min, coord1 max] ] -- ONLY HAS EFFECT ON THE INITIAL SETUP
+     inputdim = bounds.length
+     somdim = 1
+     chk = neuronscount
+     while chk.class == Array
+       somdim += 1
+       chk = chk[0]
+     end
+     som = SelfOrganizing.new(inputdim, somdim)
+     if neuronscount.class == Array
+       ncount = neuronscount.flatten.sum
+     else
+       ncount = neuronscount
+     end
+     ncount.times {
+       neu = som.neuronAdd(SOM_neuron.new())
+       coords = []
+       for i in 0...bounds.length
+         rand_base = (bounds[i][1] - bounds[i][0]).to_f
+         coord = 0.0
+         if rand_base === 0.0
+           coord = 0.0
+         else
+           coord = bounds[i][0] + Random.rand(rand_base)
+         end
+         coords.push(coord)
+       end
+       neu.center = coords
+     }
+     if somdim === 1
+       last = ''
+       som.neurons.each {|neu|
+         if last != ''
+           last.connectionAdd([neu, 1, false])
+           neu.connectionAdd([last, 1, false])
+         end
+         last = neu
+       }
+     elsif somdim === 2
+       lastlayer = ''
+       i = 0
+       neuronscount.each {|la|
+         last = ''
+         layer = []
+         la.times {
+           neu = som.neurons[i]
+           layer.push(neu)
+           if last != ''
+             neu.connectionAdd([last, 1, false])
+             last.connectionAdd([neu, 1, false])
+           end
+           last = neu
+           i += 1
+         }
+         if lastlayer != ''
+           cnts = lastlayer.generateConnections(false, 'flat')
+           rcnts = lastlayer.generateConnections(true, 'flat')
+           j = 0
+           while (layer.length > j) && (cnts.length > j)
+             layer[j].connectionAdd(cnts[j])
+             layer[j].connectionAdd(rcnts[j])
+             j += 1
+           end
+         end
+         lastlayer = Layer.new(layer)
+       }
+     end
+     som
+   end
+   
+   def makeInput(input) # [coord1, coord2...]
+     if input.length != @inputdim
+       throw 'incorrect input dimension'
+     end
+     @input = input
+     mindist = Float::INFINITY
+     winner = ''
+     @neurons.each {|ne|
+       ne.setActivation(0)
+       dist = norm(ne.center, input)
+       if dist < mindist
+         mindist = dist
+         winner = ne
+       end
+     }
+     @winner = winner
+   end
+   
+   def activate(neuron)
+     #NEIGHBORHOOD FUNCTION
+     if !@winner
+       return false
+     end
+     if neuron === @winner
+       neuron.setActivation(1)
+     elsif neuron.getConnectionTo(@winner)
+       neuron.setActivation(1)
+     else
+       neuron.setActivation(0)
+     end
+     return true
+   end
+   
+   def activateAll
+     @neurons.map {|neu|
+       activate(neu)
+     }
+   end
+   
+   def train(learning_rate = 0.5)
+     @neurons.map {|neu|
+       if neu.activation === 1
+         for i in 0...@input.length
+           neu.center[i] = (1 - learning_rate)*neu.center[i] + learning_rate*(@input[i])
+         end
+       end
+     }
+   end
+   
+   def export
+     out = []
+     @neurons.each {|neu|
+       ln = ''
+       neu.center.each {|crd|
+         ln += crd.to_s + ','
+       }
+       out.push(ln[0...-1])
+     }
+     out
+   end
+   
+   
+   #### ДОДЕЛАТЬ СОХРАНЕНИЕ И ЗАГРУЗКУ СОМА С ДИСКА
+   def loadFile(lfile)
+     file = File.new(lfile,'r')
+     @neurons = []
+     @weights = []
+     file.each_line do |ln|
+       if ln[0] === 'n'
+         ln[1...ln.length()].to_i.times {@neurons.push(Neuron.new())} 
+       elsif ln[0] === 'c'
+         @neurons[ln.split(':')[0][1...ln.length()].to_i].connectionAdd([@neurons[ln.split(':')[1].split('=')[0].to_i],ln.split('=')[1].to_f,false])
+       end
+     end
+   end
+   
+   def saveFile(lfile)
+     file = File.new(lfile, 'w')
+     file.puts "# n - neurons (n<num>)"
+     file.puts "# c - connection (c<connectionfrom>:<connectionto>=<weight>)"
+     file.puts 'n' + @neurons.length().to_s
+     i = 0
+     connections.each do |cn|
+       file.puts 'c' + @neurons.find_index(cn.neurons[0]).to_s + ':' + @neurons.find_index(cn.neurons[1]).to_s + '=' + cn.weight.to_s
+     end
+     file.close()
+   end
+  
+end
+
 class Layer
   
   def initialize(neurons = [])
     @neurons = neurons
+  end
+  
+  def neurons
+    @neurons
   end
   
   def neuronAdd(neu)
@@ -305,7 +501,9 @@ class Layer
     @neurons.each do |neu|
       wgt = 0
       if mode === 'rand'
-        wgt = (rand(100) + 1.0)/100
+        wgt = (Random.rand(100.0) + 1.0)/100
+      elsif mode === 'flat'
+        wgt = 1
       end
       out.push([neu,wgt,dir])
     end
@@ -332,4 +530,16 @@ end
 
 def dsigmoid(n)
   ( 2.718**(-n) )/( (1+2.718**(-n))**2 )
+end
+
+def norm(coords1, coords2)
+  if coords1.length != coords2.length
+    throw 'dimensional error'
+  end
+  i = 0
+  sum = 0
+  for i in 0...coords1.length
+    sum += (coords1[i] - coords2[i])**2
+  end
+  Math.sqrt(sum)
 end

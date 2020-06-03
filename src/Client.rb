@@ -16,7 +16,7 @@ class Client
     @tcp.binmode
   end
   
-  def import_key(path)
+  def import_key(path = '../key.txt')
     if File.exist?(path)
       File.open(path, 'rb') {|keyfile|
         @shkey = keyfile.read.chomp('')
@@ -24,7 +24,7 @@ class Client
     end
   end
   
-  def read_config(path)
+  def read_config(path = '../config.ini')
     if File.exist?(path)
       File.open(path, 'r') {|conf|
         conf.each_line {|ln|
@@ -163,6 +163,45 @@ class Client
       puts "verified #{path}"
     else
       puts "sha-1 verification failed on #{path}"
+    end
+    
+  end
+  
+def remove_file(path, tarpath = 'test/' + path, sha1 = 'last')
+    
+  path = path.chomp('')
+  tarpath = tarpath.chomp('')
+  
+    #authenticate
+    @tcp.write(Bstring.f(@shkey))
+    resp = @tcp.read(1)
+    puts T.readMsgSafe(@tcp)
+    if resp === CANCEL
+      return false
+    end
+    
+    #signal for sending
+    @tcp.write(Bstring.f('file_remove'))
+    if @tcp.read(1) === CANCEL
+      puts T.readMsgSafe(@tcp)
+      return false
+    end
+    
+    #send filename
+    @tcp.write(Bstring.f(path))
+    if @tcp.read(1) === CANCEL
+      puts T.readMsgSafe(@tcp)
+      return false
+    end
+    
+    #send checksum
+    @tcp.write(Bstring.f(sha1))
+    msg = @tcp.read(1)
+    if msg === CANCEL
+      puts T.readMsgSafe(@tcp)
+      return false
+    elsif msg === TAB
+      puts 'deleted'
     end
     
   end

@@ -1,7 +1,7 @@
 require './Client.rb'
 
 client = Client.new
-client.import_key('../shkey.txt')
+client.import_key('../key.txt')
 client.read_config('../config.ini')
 client.open
 sha1 = client.send_file(ARGV[0].split('\\').join('/'))

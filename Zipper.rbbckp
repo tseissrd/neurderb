@@ -1,0 +1,171 @@
+require "Task"
+require "FS"
+
+class Archieve
+  
+  def encrgx()
+    /^%ZZenc[0-9]+%/
+  end
+  
+  def begfrgx()
+    /^%ZZbegf.+%/
+  end
+  
+  def initialize(path, wordsize = 16, dictsize = "64MiB")
+    @path = path
+    @wordSize = wordsize
+    @dictSize = FS.parse(dictsize)
+    @lsNew = []
+    @ls = []
+    @lastit = 0
+    @writeit = 0
+    @saved = 0
+  end
+  
+  def write(path, dict)
+    if File.file?(@path)
+      if File.file?(path)
+        input = "%ZZbegf#{path}%"
+        @writeit += IO.binwrite(@path,input,@writeit)
+        File.open(path, "r") {|fl|
+          while input = fl.read(@wordSize)
+            if !(dict[input])
+              if ((dict.size + 1) * @wordSize) < @dictSize
+                dict[input] = @writeit
+              end
+            else
+              input = "%ZZenc#{dict[input]}%"
+              @saved += @wordSize - input.length
+            end
+            @writeit += IO.binwrite(@path,input,@writeit)
+          end
+        }
+        return @writeit - @lastit
+      end
+    end
+  end
+  
+  def read(arc,path,readit)
+    if File.file?(@path)
+      if !(File.file?(path))
+        writeit = 0
+        arc.seek(readit)
+        File.new(path,"w").close
+        readChunk = @wordSize
+          while input = arc.read(readChunk)
+            if input =~ /%ZZbegf/
+              if input =~ /^%ZZbegf/
+                if input =~ begfrgx
+                  return arc.tell - readChunk
+                else
+                  arc.seek(arc.tell - readChunk)
+                  readChunk += 1
+                  input = ''
+                end
+              else
+                input = input[0...(input.index(/%ZZbegf/))]
+                readChunk = @wordSize
+                arc.seek(arc.tell - readChunk + input.length)
+              end
+            elsif input =~ /%ZZenc/
+              if input =~ encrgx
+                sstr = input.scan(encrgx).last
+                prevPos = arc.tell - @wordSize + sstr.length
+                arc.seek(sstr[6...-1].to_i)
+                input = arc.read(@wordSize)
+                arc.seek(prevPos)
+                readChunk = @wordSize
+              else
+                input = ''
+                arc.seek(arc.tell - readChunk)
+                readChunk += 1
+              end
+            end
+            writeit += IO.binwrite(path,input,writeit)
+          end
+          return false
+      end
+    end
+  end
+  
+  def add(path)
+    if File.file?(path)
+      @lsNew.push(
+        {
+          label: path,
+          size: '*'
+        }
+        )
+      return path
+    end
+  end
+  
+  def zip
+    if !(File.file?(@path))
+      File.new(@path, "w").close
+      dict = {}
+      @lsNew.each do |rf|
+        rfl = rf[:label]
+        if File.file?(rfl)
+          written = write(rfl, dict)
+          rf[:size] = FS.readable(written)
+          @lastit += written
+        end
+      end
+    end
+    @ls = @lsNew
+    return @path
+  end
+  
+  def unzip(unzippath)
+    if File.file?(@path)
+      File.open(@path) {|arc|
+        readChunk = @wordSize
+        while input = arc.read(readChunk)
+          if input =~ /%ZZbegf/
+            puts input
+          end
+          if input =~ /^%ZZbegf/
+            if input =~ begfrgx
+              sstr = input.scan(begfrgx).last
+              path = './test/' + sstr[7...-1]
+              #Task.queue {
+                puts sstr
+                #read(arc,path,arc.tell)
+              #}
+              arc.seek(arc.tell - readChunk + sstr.length)
+              readChunk = @wordSize
+            else
+              arc.seek(arc.tell - readChunk)
+              readChunk += 1
+            end
+          elsif input =~ /^%ZZenc/
+            #puts input
+            if input =~ encrgx
+              arc.seek(arc.tell - readChunk + input.scan(encrgx).last.length)
+              readChunk = @wordSize
+            else
+              arc.seek(arc.tell - readChunk)
+              readChunk += 1
+            end
+          end
+        end
+        Task.wait
+      }
+    end
+    return true
+  end
+  
+  def list
+    @ls
+  end
+  
+  def pending
+    @lsNew
+  end
+  
+  def saved
+    @saved
+  end
+  
+end
