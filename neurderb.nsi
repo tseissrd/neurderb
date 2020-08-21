@@ -9,7 +9,7 @@
 !include x64.nsh
 
 ; The name of the installer
-Name "nn driven file hosting 0.0.1"
+Name "nn enabled file hosting 1.0.0"
 
 ; The file to write
 OutFile "neurderb.exe"
@@ -45,7 +45,7 @@ UninstPage instfiles
 ;--------------------------------
 
 ; The stuff to install
-Section "Neurderb Client"
+Section "Client"
 
   SectionIn RO
   

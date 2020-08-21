@@ -137,9 +137,12 @@ class Server
     end
   end
   
-  def start(listeners_count = 1, zippers_count = 1)
+  def start(listeners_count = 500, zippers_count = 500)
     zippers = []
     listeners = []
+    Task.groupMax('listeners',5)
+    Task.groupMax('writers',5)
+    Task.groupMax('zippers',5)
       
     archive = Task.queue {
       while true
@@ -224,6 +227,7 @@ class Server
                         while sha1 === ''
                           sleep 0.1
                         end
+                        puts @dataFolder + clientPath + filename + '/' + sha1 + '/' + filename
                         serversha1 = T.sha1(@dataFolder + clientPath + filename + '/' + sha1 + '/' + filename)
                         if serversha1 === sha1
                           shachk = true
@@ -255,13 +259,15 @@ class Server
                           eof = false
                         else
                           shachk = false
-                          puts "sha-1 check failed on #{filename}"
+                          puts 'serverside sha-1 is ' + serversha1
+                          puts 'has to be ' + sha1
+                          puts "sha-1 check failed on #{@dataFolder + clientPath + filename + '/' + sha1 + '/' + filename}"
                           writing = false
                           writeit = 0
                           eraseExisting = true
                           eof = false
-                          change_data_size(-File.size(filename))
-                          File.delete(filename)
+                          change_data_size(-File.size(@dataFolder + clientPath + filename + '/' + sha1 + '/' + filename))
+                          File.delete(@dataFolder + clientPath + filename + '/' + sha1 + '/' + filename)
                         end
                       end
                     end
@@ -293,7 +299,7 @@ class Server
                   sock.write(TAB)
                   
                   #begin transmission
-                  filename = T.readMsgSafe(sock)
+                  filename = T.readMsgSafe(sock).to_s
                   
                   #check for access violation
                   if filename.split('..').length > 1 || filename.split(':').length > 1
@@ -302,7 +308,7 @@ class Server
                   end
                   sock.write(TAB)
                   
-                  sha1 = T.readMsgSafe(sock)
+                  sha1 = T.readMsgSafe(sock).to_s
                   
                   eof = false
                   writing = true
@@ -335,7 +341,7 @@ class Server
                   #REMOVE FILE
                   elsif cmd === 'file_remove'
                     sock.write(TAB)
-                    filename = T.readMsgSafe(sock)
+                    filename = T.readMsgSafe(sock).to_s
                     if filename.split('..').length > 1 || filename.split(':').length > 1
                       T.closeConnection(sock, 'access violation')
                       Task.done
@@ -498,19 +504,46 @@ class Server
       perc = NeuralNetwork.new()
       perc.loadFile('planning.cfg')
     else
-      perc = NeuralNetwork.newPerceptron(9,6,6,3)
+      perc = NeuralNetwork.newPerceptron(9,8,6,4,3)
     end
     #if File.exist?("planningSOM.cfg")
     #  som = NeuralNetwork.new()
     #  som.loadFile('planningSOM.cfg')
     #else
-      som = SelfOrganizing.newSOM(500, [ [0,1], [0,1], [0,1], [0,50], [0,50], [0,50] ])
+      som = SelfOrganizing.newSOM(500, [ [0,1], [0,1], [0,1], [0,1], [0,1], [0,1] ])
       #som = SelfOrganizing.newSOM(50, [ [0,1], [0,1], [0,1] ])
     #end
     
+    #training conf
+    cycles = 5
+    starting_rate = 0.4
+    min_rate = 0.01
+    
     i = 0
-    cycles = 100
     accuracy = 0
+    normalize = Proc.new{|dx|
+      if dx >= 2
+        Random.rand(0.8..1)
+      elsif dx >= 1
+        Random.rand(0.6...0.8)
+      elsif dx >= -1
+        Random.rand(0.4...0.6)
+      elsif dx >= -2
+        Random.rand(0.2...0.4)
+      else
+        Random.rand(0.0...0.4)
+      end
+    }
+    unnormalize = Proc.new{|oi|
+      if oi >= 0.6
+        oi*3
+      elsif oi >= 0.4
+        0
+      else
+        (oi-1)*3
+      end
+    }
+    
     #patterns
     patterns = []
     preparation_tasks = []
@@ -523,7 +556,7 @@ class Server
         fsu = Random.rand
         #current maxima
         maxl = Random.rand(0..50)
-        maxw = Random.rand(0..50)
+        maxw = Random.rand(0..maxl)
         maxz = Random.rand(0..50)
         
         #TEMPLATE OUTPUTS
@@ -539,30 +572,39 @@ class Server
         
         cw = 1 - 4 * cpu
         rw = -2 + 7 * rmu
-        fw = 5 - 10 * fsu
-        dw = cw + rw + fw
-        dw = maxl - maxw if maxl - maxw < cw + rw + fw 
-        dw = 0 if (dw < 0) && (maxw === 1)
+        fw = 4 - 9 * fsu
+        dw = cw + rw + fw 
+        if maxl - maxw < dw
+          dw = maxl - maxw
+        elsif (dw < 0) && (maxw === 1)
+          dw = 0 
+        end
         
         cz = 2 - 7 * cpu
-        rz = 2 - 7 * rmu
+        rz = 3 - 6 * rmu
         fz = -2 + 7 * fsu
         dz = cz + rz + fz
         dz = 0 if (dz < 0) && (maxz === 0)
+        
+        #dl,dw,dz = normalize.call(dl),normalize.call(dw),normalize.call(dz)
+        dl,dw,dz = (1.7+dl).to_f/3.7,(10+dw).to_f/20,(10+dz).to_f/20
+        
         Task.sync('patterns') {
           patterns.push([[cpu,rmu,fsu,maxl.to_f/50,maxw.to_f/50,maxz.to_f/50], perc.createPattern([dl,dw,dz])])
         }
       }
     }
     Task.wait(preparation_tasks)
-    
+
     time_start = Time.new
     puts 'training started'
     
     timer = Task.queue {
-      while i < cycles
+      while true
         sleep 15
-        puts "#{i}/#{cycles} (#{(i.to_f/cycles*100).round(1)}%) -- #{((Time.new - time_start).to_f/60).round(2)}min. elapsed -- accuracy ~#{(accuracy.to_f/i).round(2)}"
+        Task.done if i>= cycles
+        time_now = Time.new
+        puts "#{i}/#{cycles} (#{(i.to_f/cycles*100).round(1)}%) -- #{((time_now - time_start).to_f/60).round(2)}min. elapsed -- ETA #{((cycles-i).to_f/((60*i).to_f/(time_now-time_start))).round(2)}min. -- accuracy ~#{(accuracy.to_f/i).round(4)}"
       end
     }
     
@@ -577,23 +619,24 @@ class Server
         perc.inputLayer.setActivation(ins)
         output = perc.evaluate
         
+        perc.connections.each {|cn|
+          cn.learningRate = (starting_rate-min_rate)*(1-i.to_f/cycles) + min_rate
+        }
         perc.train(pat[1])
         
         immediate_accuracy = 0
         cc = -1
         output.each {|neu|
           cc += 1
-          #puts 'neu'
-          #puts neu[1]
-          #puts 'pat'
-          #puts pat[1][cc][1]
-          immediate_accuracy += (1 - (neu[1] - pat[1][cc][1]).to_f.abs/pat[1][cc][1].abs)*100
+#          if (i+1)%5 == 0
+#            puts 'neu'
+#            puts neu[1]
+#            puts 'pat'
+#            puts pat[1][cc][1]
+#          end
+          immediate_accuracy += (neu[1] - pat[1][cc][1]).abs
         }
-        #puts 'immediate_accuracy'
-        #puts immediate_accuracy
-        accuracy += immediate_accuracy.to_f/3
-        #puts 'accuracy'
-        #puts accuracy
+        accuracy += immediate_accuracy.to_f/3 # 0 is ideal
         
         i += 1
       ensure
@@ -602,12 +645,7 @@ class Server
     }
     
     time_elapsed = Time.new - time_start
-    puts "trained #{cycles} samples in #{(time_elapsed.to_f/60).round(2)}min. / #{(cycles.to_f/time_elapsed.to_f).round(2)} samples/s.}"
-    
-    #perc.inputLayer.setActivation([0.2,0.1,0.95] + [@cpu_target,@ram_target,@fs_target])
-    perc.inputLayer.setActivation([0.2,0.1,0.95,15.to_f/50,15.to_f/50,2.to_f/50] + [@cpu_target,@ram_target,@fs_target])
-    puts perc.evaluate()
-    return
+    puts "trained #{cycles} samples in #{(time_elapsed.to_f/60).round(2)}min. // #{(cycles.to_f/time_elapsed.to_f).round(2)} samples/s. // average accuracy was #{(accuracy.to_f/i).round(4)}}" 
     
     planning = Task.queue {
       while true
@@ -639,16 +677,44 @@ class Server
         p_ram = r_ram.to_f/@ram_max
         p_fs = r_fs.to_f/@fs_max
         
-        puts "CPU: #{r_cpu}"
-        puts "RAM: #{FS.readable(r_ram)}"
-        puts "FS: #{FS.readable(r_fs)}"
-        puts p_cpu
-        puts p_ram
-        puts p_fs
+        puts "CPU: #{r_cpu} (#{(p_cpu*100).round(2)}%)"
+        puts "RAM: #{FS.readable(r_ram)} (#{(p_ram*100).round(2)}%)"
+        puts "FS: #{FS.readable(r_fs)} (#{(p_fs*100).round(2)}%)"
+    		puts 'Task groups maxima:'
+    		puts "listeners: #{Task.getGroupMax('listeners').floor}"
+    		puts "writers: #{Task.getGroupMax('writers').floor}"
+    		puts "zippers: #{Task.getGroupMax('zippers').floor}"
         
+    		insSOM = [p_cpu,p_ram,p_fs,Task.getGroupMax('listeners'),Task.getGroupMax('writers'),Task.getGroupMax('zippers')]
+        outsSOM = som.makeInput(insSOM).center
+        som.activateAll
+        som.train
+        ins = outsSOM + [@cpu_target,@ram_target,@fs_target]
+        perc.inputLayer.setActivation(ins)
+        output = perc.evaluate
+    		
+        dlsn = unnormalize.call(output[0][1])
+        dwrt = unnormalize.call(output[1][1])
+        dzip = unnormalize.call(output[2][1])
         
+        if (Task.getGroupMax('writers') + dwrt) > (Task.getGroupMax('listeners') + dlsn)
+          dwrt = Task.getGroupMax('listeners') + dlsn - Task.getGroupMax('writers')
+        end
+        if (Task.getGroupMax('listeners') + dlsn) < 1
+          dlsn = 0
+        end
+        if (Task.getGroupMax('writers') + dwrt) < 1
+          dwrt = 0
+        end
+        if (Task.getGroupMax('zippers') + dzip) < 0
+          dzip = 0
+        end
         
-        sleep 10
+    		Task.groupMax('listeners', Task.getGroupMax('listeners') + dlsn)
+    		Task.groupMax('writers', Task.getGroupMax('writers') + dwrt)
+    		Task.groupMax('zippers', Task.getGroupMax('zippers') + dzip)
+            
+        sleep 20
       end
     }
     puts "data folder size: #{FS.readable(calc_data_size)}"

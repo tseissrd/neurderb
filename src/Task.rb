@@ -24,6 +24,10 @@ class Task
     @@groupMax[group] = newMax
   end
   
+  def self.getGroupMax(group)
+    @@groupMax[group]
+  end
+  
   def self.queue(group = '', &prc)
     if !@@groupCurrent[group]
       @@groupCurrent[group] = 0

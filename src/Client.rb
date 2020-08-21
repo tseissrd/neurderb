@@ -95,7 +95,7 @@ class Client
     }
   end
   
-  def get_file(path, tarpath = 'test/' + path, sha1 = 'any')
+  def get_file(path, tarpath = '../received/' + path, sha1 = 'any')
     
 	path = path.chomp('')
 	tarpath = tarpath.chomp('')

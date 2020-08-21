@@ -10,7 +10,7 @@ if ARGV.length === 0
 	  if cmd === 'q'
 	    break
 	  end
-	  puts 'enter name of the file'
+	  puts 'enter path to the file'
 	  input = gets.chomp('').split(':')
 	  file = input[0]
 	  sha = ''
@@ -21,12 +21,19 @@ if ARGV.length === 0
 	  client.read_config
 	  client.open
 	  if cmd === 'w'
-	    client.send_file(file)
+	    time_start = Time.new
+	    if file.split('/').length > 1
+	      client.send_file(file)
+	    else
+        client.send_file('../' + file)
+	    end
+	    time_elapsed = Time.new - time_start
+	    puts "elapsed #{time_elapsed} s."
 	  elsif cmd === 'r'
       if sha === ''
         sha = 'any'
       end
-	    client.get_file(file, sha)
+	    client.get_file(file, "../received/#{file}", sha)
 	  elsif cmd === 'd'
 	    if sha === ''
 	      sha = 'last'
@@ -40,7 +47,7 @@ else
   case cmd
     when 'help'
       puts 'send <path> - send files to server'
-      puts 'get <name[:sha|any]> - receive files from server'
+      puts 'get <name[:sha|any]> [destination] - receive files from server'
       puts 'delete <name[:sha|last|all]> - delete files on server'
       puts 'help - display this info'
       puts 'example usage: "cli get testfile.txt:example_sha"'
@@ -53,7 +60,11 @@ else
       client.read_config
       client.import_key
       client.open
-      client.send_file(ARGV[1].chomp(''))
+      if ARGV[1].split('/').length > 1
+        client.send_file(ARGV[1].chomp(''))
+      else
+        client.send_file('../' + ARGV[1].chomp(''))
+      end
       client.close
       return
     when 'get'
@@ -67,11 +78,16 @@ else
       client.open
       input = ARGV[1].chomp('').split(':')
       file = input[0]
+      if ARGV.length < 3
+        dest = '../received/' + file
+      else
+        dest = ARGV[2]
+      end
       sha = 'any'
       if input.length > 1
         sha = input[1]
       end
-      client.get_file(file, sha)
+      client.get_file(file, dest, sha)
       client.close
       return
     when 'delete'

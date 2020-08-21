@@ -19,6 +19,9 @@ class Connection
   def learningRate
     @learningRate
   end
+  def learningRate=(newRate)
+    @learningRate = newRate
+  end
 end
   
 class Neuron
@@ -207,6 +210,12 @@ class NeuralNetwork
   
   def learningDelta(neu1, pattern)
     out = 0
+    if @deltas.length != 0
+      if @deltas.key?(neu1)
+        out = @deltas[neu1]
+        return out
+      end
+    end
     if outNeurons().include?(neu1)
       pattern.each do |pat|
         if pat[0] === neu1
@@ -221,6 +230,7 @@ class NeuralNetwork
         end
       end
     end
+    @deltas[neu1] = out
     out
   end
   
@@ -228,6 +238,7 @@ class NeuralNetwork
     if pattern.length() != outNeurons().length()
       throw('incorrect training pattern') 
     end
+    @deltas = {}
     pattern.each do |pat|
       changes = {}
       @neurons.each do |neubase|
@@ -452,8 +463,7 @@ class SelfOrganizing < NeuralNetwork
      }
      out
    end
-   
-   
+    
    #### ДОДЕЛАТЬ СОХРАНЕНИЕ И ЗАГРУЗКУ СОМА С ДИСКА
    def loadFile(lfile)
      file = File.new(lfile,'r')
@@ -461,7 +471,12 @@ class SelfOrganizing < NeuralNetwork
      @weights = []
      file.each_line do |ln|
        if ln[0] === 'n'
-         ln[1...ln.length()].to_i.times {@neurons.push(Neuron.new())} 
+         #ln[1...ln.length()].to_i.times {@neurons.push(Neuron.new())}
+         center = []
+         ln[1..(-1)].split(':').each {|coord|
+           center.push(coord)
+         }
+         @neurons.push(SOM_neuron.new([], center)) 
        elsif ln[0] === 'c'
          @neurons[ln.split(':')[0][1...ln.length()].to_i].connectionAdd([@neurons[ln.split(':')[1].split('=')[0].to_i],ln.split('=')[1].to_f,false])
        end
@@ -470,9 +485,18 @@ class SelfOrganizing < NeuralNetwork
    
    def saveFile(lfile)
      file = File.new(lfile, 'w')
-     file.puts "# n - neurons (n<num>)"
+     file.puts "# KOHONEN SELF ORGANIZING MAP"
+     file.puts "# n - neuron (n<center coords1>:<center coords2>:<...>)"
      file.puts "# c - connection (c<connectionfrom>:<connectionto>=<weight>)"
-     file.puts 'n' + @neurons.length().to_s
+     @neurons.each {|neu|
+       if neu.center
+         coord_str = "#{neu.center[0]}"
+         neu.center[1..(-1)].each {|coord|
+           coord_str += ":#{coord}"
+         }
+         file.puts 'n' + coord_str
+       end
+     }
      i = 0
      connections.each do |cn|
        file.puts 'c' + @neurons.find_index(cn.neurons[0]).to_s + ':' + @neurons.find_index(cn.neurons[1]).to_s + '=' + cn.weight.to_s
