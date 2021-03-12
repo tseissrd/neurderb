@@ -19,7 +19,7 @@ if sha1
     bat += "set appdir=%%A %%B\n"
     bat += ")\n"
     bat += "cd \"%appdir%/src\"\n"
-    bat += "ruby nrbGet.rb #{fname} \"%pwd%/#{fname}\" #{sha1}"
+    bat += "ruby nrbGet.rb \"#{fname}\" \"%pwd%/#{fname}\" #{sha1}"
     #bat += "DEL \"%~f0\""
     f.write(bat)
   }

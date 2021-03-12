@@ -39,7 +39,7 @@ class FS
       return toKiB(bytes).round(2).to_s + 'KiB'
     elsif toMiB(bytes) < 1024
       return toMiB(bytes).round(2).to_s + 'MiB'
-    elsif toGiB(bytes) < 1024
+    else #elsif toGiB(bytes) < 1024
       return toGiB(bytes).round(2).to_s + 'GiB'
     end    
   end
